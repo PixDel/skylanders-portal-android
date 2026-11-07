@@ -1,5 +1,8 @@
 #include "dev/input_script.h"
 
+#ifdef __ANDROID__
+#include <dlfcn.h>
+#endif
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
@@ -451,14 +454,24 @@ void ScanGuestMemory(rex::memory::Memory* memory, const std::vector<uint32_t>& w
 // RenderDoc's in-application API (renderdoc_app.h) is an array of function pointers whose layout
 // later versions only extend: StartFrameCapture is entry 19, EndFrameCapture entry 21.
 void CaptureGuestFrames(uint32_t frames, const std::function<uint64_t()>& guest_frame_count) {
+#if defined(_WIN32) || defined(__ANDROID__)
+  using GetApi = int (*)(int version, void** api);
 #ifdef _WIN32
   HMODULE module = GetModuleHandleA("renderdoc.dll");
   if (!module) {
     REXLOG_WARN("Input script: renderdoc requested, but RenderDoc is not attached");
     return;
   }
-  using GetApi = int (*)(int version, void** api);
   auto get_api = reinterpret_cast<GetApi>(GetProcAddress(module, "RENDERDOC_GetAPI"));
+#else
+  // Android: the layer packaged with a debug APK (vulkan_renderdoc_layer).
+  void* module = dlopen("libVkLayer_GLES_RenderDoc.so", RTLD_NOW | RTLD_NOLOAD);
+  if (!module) {
+    REXLOG_WARN("Input script: renderdoc requested, but the RenderDoc layer is not loaded");
+    return;
+  }
+  auto get_api = reinterpret_cast<GetApi>(dlsym(module, "RENDERDOC_GetAPI"));
+#endif
   void** api = nullptr;
   if (!get_api || !get_api(10000, reinterpret_cast<void**>(&api)) || !api) {
     REXLOG_WARN("Input script: RenderDoc API 1.0.0 not available");
@@ -479,10 +492,21 @@ void CaptureGuestFrames(uint32_t frames, const std::function<uint64_t()>& guest_
   const uint32_t ok = reinterpret_cast<EndFrameCapture>(api[21])(nullptr, nullptr);
   REXLOG_INFO("Input script: RenderDoc capture of guest frames {}-{} {}", first, last,
               ok ? "saved" : "failed");
+  // Where it went: GetNumCaptures (entry 13) and GetCapture (entry 14).
+  using GetNumCaptures = uint32_t (*)();
+  using GetCapture = uint32_t (*)(uint32_t idx, char* filename, uint32_t* pathlength,
+                                  uint64_t* timestamp);
+  const uint32_t count = reinterpret_cast<GetNumCaptures>(api[13])();
+  if (count) {
+    char path[512] = {};
+    uint32_t length = sizeof(path);
+    reinterpret_cast<GetCapture>(api[14])(count - 1, path, &length, nullptr);
+    REXLOG_INFO("Input script: RenderDoc capture file {}", path);
+  }
 #else
   (void)frames;
   (void)guest_frame_count;
-  REXLOG_WARN("Input script: renderdoc is only supported on Windows");
+  REXLOG_WARN("Input script: renderdoc is only supported on Windows and Android");
 #endif
 }
 
