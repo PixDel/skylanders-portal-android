@@ -545,6 +545,7 @@ class ScriptInputDriver final : public rex::input::InputDriver {
           auto last_frame = time_before;
           double longest_ms = 0.0;
           int over50 = 0;
+          int histogram[24] = {};  // frame gaps in 5 ms steps, the last one 115 ms and more
           while (Clock::now() < until) {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
             const uint64_t count = guest_frame_count();
@@ -554,6 +555,7 @@ class ScriptInputDriver final : public rex::input::InputDriver {
               if (last_count != frames_before) {  // the first gap started before the measurement
                 longest_ms = std::max(longest_ms, gap);
                 over50 += gap > 50.0;
+                ++histogram[std::min(23, int(gap / 5.0))];
               }
               last_count = count;
               last_frame = now;
@@ -563,6 +565,11 @@ class ScriptInputDriver final : public rex::input::InputDriver {
           const double seconds = std::chrono::duration<double>(Clock::now() - time_before).count();
           REXLOG_INFO("Input script: {:.1f} guest FPS ({} frames in {:.2f} s), longest frame {:.0f} ms, {} over 50 ms",
                       double(frames) / seconds, frames, seconds, longest_ms, over50);
+          std::string histogram_text;
+          for (int i = 0; i < 24; ++i) {
+            if (histogram[i]) histogram_text += fmt::format(" {}-{}ms:{}", i * 5, i * 5 + 5, histogram[i]);
+          }
+          REXLOG_INFO("Input script: frame gaps{}", histogram_text);
         } else if (e.kind == Event::Kind::kScan) {
           ScanGuestMemory(memory, e.words);
         } else if (e.kind == Event::Kind::kPoke) {
