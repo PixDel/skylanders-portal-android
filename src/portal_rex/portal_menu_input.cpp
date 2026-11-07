@@ -19,6 +19,7 @@
 #include <rex/input/input_driver.h>
 #include <rex/input/input_system.h>
 #include <rex/input/mnk/mnk_input_driver.h>
+#include <rex/input/touch/touch_input_driver.h>
 #include <rex/input/nop/nop_input_driver.h>
 #include <rex/input/sdl/sdl_input_driver.h>
 #if REX_PLATFORM_WIN32
@@ -665,6 +666,9 @@ std::unique_ptr<rex::system::IInputSystem> CreatePortalMenuInputSystem(bool tool
     if (REXCVAR_GET(input_backend) == "sdl") {
       AddWrapped<rex::input::sdl::SDLInputDriver>(*input, true);
     }
+    // On-screen touch controls (Android only; Setup fails elsewhere): pollable like a pad, so
+    // they drive the portal and settings menus too.
+    AddWrapped<rex::input::touch::TouchInputDriver>(*input, true);
     // Keyboard/mouse emulation: not pollable from the UI thread (it consumes mouse deltas); the
     // menu reads the keyboard through ImGui instead.
     AddWrapped<rex::input::mnk::MnkInputDriver>(*input, false, true);
