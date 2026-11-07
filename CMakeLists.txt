@@ -111,9 +111,16 @@ if(TARGET rex::runtime)
     if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/hidapi/CMakeLists.txt")
         message(FATAL_ERROR "skylanders-portal: thirdparty/hidapi missing; run git submodule update --init --recursive")
     endif()
-    set(HIDAPI_WITH_TESTS OFF CACHE BOOL "" FORCE)
-    set(BUILD_SHARED_LIBS OFF)
-    add_subdirectory(thirdparty/hidapi)
+    if(ANDROID)
+        # No hidapi backend on Android yet: a stub that finds no USB portal (see the file).
+        add_library(hidapi_android_stub STATIC src/portal/usb/hidapi_android_stub.c)
+        target_include_directories(hidapi_android_stub PUBLIC thirdparty/hidapi/hidapi)
+        add_library(hidapi::hidapi ALIAS hidapi_android_stub)
+    else()
+        set(HIDAPI_WITH_TESTS OFF CACHE BOOL "" FORCE)
+        set(BUILD_SHARED_LIBS OFF)
+        add_subdirectory(thirdparty/hidapi)
+    endif()
 
     add_library(skylanders_portal_rex STATIC
         src/portal_rex/portal_rex.cpp

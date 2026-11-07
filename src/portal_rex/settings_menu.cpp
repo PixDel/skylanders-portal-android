@@ -482,6 +482,9 @@ std::string LayoutKeyName(const std::string& sdk_name) {
   const bool printable = (vk >= '0' && vk <= '9') || (vk >= 'A' && vk <= 'Z') || (vk >= 0xBA && vk <= 0xC0) ||
                          (vk >= 0xDB && vk <= 0xDF) || vk == 0xE2;
   if (!printable) return {};
+#if !defined(_WIN32)
+  return {};  // no layout lookup outside Windows: the key keeps the SDK's name
+#else
   static HKL us = LoadKeyboardLayoutW(L"00000409", KLF_NOTELLSHELL);
   const UINT scan = MapVirtualKeyExW(vk, MAPVK_VK_TO_VSC, us ? us : GetKeyboardLayout(0));
   wchar_t text[32] = {};
@@ -491,6 +494,7 @@ std::string LayoutKeyName(const std::string& sdk_name) {
   char utf8[96] = {};
   const int n = WideCharToMultiByte(CP_UTF8, 0, text, -1, utf8, sizeof(utf8), nullptr, nullptr);
   return n > 1 ? std::string(utf8) : std::string();
+#endif
 }
 
 // One key as shown.
