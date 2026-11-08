@@ -11,6 +11,9 @@
 #include <rex/cvar.h>
 
 #include <imgui_internal.h>
+#if defined(__ANDROID__)
+#include <rex/input/touch/touch_input_driver.h>
+#endif
 
 #include "portal_rex/game_font.h"
 #include "portal_rex/input_pictures.h"
@@ -447,7 +450,38 @@ float Hint(ImDrawList* dl, ImVec2 pos, std::string_view glyph, ImU32 glyph_col,
   }
   Label(dl, BoldFont(), S(20), {pos.x + glyph_w + S(8), CapCentredY(pos.y + h / 2, S(20))}, kDim,
         label);
-  return HintWidth(glyph, label, round, key);
+  const float width = HintWidth(glyph, label, round, key);
+  TouchHint(pos, {pos.x + width - S(20), pos.y + h}, glyph);
+  return width;
+}
+
+// Android: a hint is also a touch target that presses its button(s) on the touch controller, and
+// a menu that draws hints counts as open, so the on-screen controls step aside for it
+// (rexglue touch_input_driver.h). "LB / RB" and "< / >" press the half that was tapped.
+void TouchHint(ImVec2 a, ImVec2 b, std::string_view glyph) {
+#if defined(__ANDROID__)
+  rex::input::touch::NoteMenuShown();
+  // A finger is wider than a mouse: a little extra room around the hint.
+  const ImVec2 a2(a.x - S(6), a.y - S(10)), b2(b.x + S(6), b.y + S(10));
+  if (!ImGui::IsMouseHoveringRect(a2, b2, false) || !ImGui::IsMouseClicked(0)) return;
+  const bool right = ImGui::GetIO().MousePos.x > (a.x + b.x) / 2;
+  std::string chord;
+  if (glyph == "LB / RB") chord = right ? "rb" : "lb";
+  else if (glyph == "LT / RT") chord = right ? "rt" : "lt";
+  else if (glyph == "< / >") chord = right ? "right" : "left";
+  else if (glyph == "L3") chord = "ls";
+  else if (glyph == "R3") chord = "rs";
+  else if (glyph == "A" || glyph == "B" || glyph == "X" || glyph == "Y" || glyph == "LB" ||
+           glyph == "RB" || glyph == "LT" || glyph == "RT" || glyph == "Back" ||
+           glyph == "Start") {
+    chord = std::string(glyph);
+  }
+  if (!chord.empty()) rex::input::touch::PressButtons(chord);
+#else
+  (void)a;
+  (void)b;
+  (void)glyph;
+#endif
 }
 
 void ScrollList(size_t& first, size_t& followed, float& wheel, size_t chosen, size_t visible,

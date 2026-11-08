@@ -67,6 +67,9 @@ void UseKeyboardHints(bool keyboard, bool now = false);
 float Hint(ImDrawList* dl, ImVec2 pos, std::string_view glyph, ImU32 glyph_col,
            std::string_view label, bool round, std::string_view key = {});
 float HintWidth(std::string_view glyph, std::string_view label, bool round, std::string_view key = {});
+// Android: makes the rectangle a touch target pressing that hint's button(s), and tells the
+// on-screen controls a menu is open. Hint() calls it; menus with their own hint drawing can too.
+void TouchHint(ImVec2 a, ImVec2 b, std::string_view glyph);
 
 // The game's picture for an art key (portal_menu.h SetArtImageProvider) as a texture, kept once
 // made; a null id while there is none (yet). Lives in portal_menu.cpp, which owns the textures.

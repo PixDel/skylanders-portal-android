@@ -1537,11 +1537,14 @@ void RegisterSettingsMenu(rex::ui::ImGuiDrawer* drawer, rex::ui::WindowedAppCont
     std::rotate(g_state.pages.begin(), game, game + 1);
   }
   // The keyboard's keys after the controls page (or at the end), where the SDK has its keyboard.
+  // Not on Android, where the game is played with touch or a controller.
+#if !defined(__ANDROID__)
   if (SettingsPage keys = KeyboardPage(); !keys.settings.empty()) {
     auto controls = std::find_if(g_state.pages.begin(), g_state.pages.end(),
                                  [](const SettingsPage& p) { return p.en == "Controls"; });
     g_state.pages.insert(controls == g_state.pages.end() ? g_state.pages.end() : controls + 1, std::move(keys));
   }
+#endif
   // The controller's buttons next to them.
   if (SettingsPage pads = ControllerPage(); !pads.settings.empty()) {
     auto keyboard = std::find_if(g_state.pages.begin(), g_state.pages.end(),
@@ -1607,6 +1610,21 @@ void CloseGameWindow() {
         return FALSE;
       },
       0);
+#elif defined(__ANDROID__)
+  // No window to close: the activity ends the app (SSAActivity.quitGame).
+  JNIEnv* env = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
+  jobject activity = static_cast<jobject>(SDL_GetAndroidActivity());
+  if (!env || !activity) return;
+  jclass cls = env->GetObjectClass(activity);
+  jmethodID method = cls ? env->GetMethodID(cls, "quitGame", "()V") : nullptr;
+  if (!method) {
+    if (env->ExceptionCheck()) env->ExceptionClear();
+    REXLOG_ERROR("Settings menu: the activity has no quitGame()");
+    return;
+  }
+  REXLOG_INFO("Settings menu: quitting");
+  env->CallVoidMethod(activity, method);
+  if (env->ExceptionCheck()) env->ExceptionClear();
 #endif
 }
 
@@ -1683,13 +1701,28 @@ void AddQuitSettings(SettingsPage& page) {
     volume.options.push_back({std::to_string(p), p == 0 ? "Off" : label, p == 0 ? "Aus" : label});
   }
   page.settings.push_back(std::move(volume));
+#if defined(__ANDROID__)
+  page.settings.back().help_en = "How loud the game is, heard while you change it.\n"
+                                 "\n"
+                                 "The device's own volume stays as it is.";
+  page.settings.back().help_de = "Wie laut das Spiel ist, schon beim Verstellen zu h\xC3\xB6ren.\n"
+                                 "\n"
+                                 "Die Lautst\xC3\xA4rke des Ger\xC3\xA4ts bleibt, wie sie ist.";
+#endif
   Setting fps;
   fps.cvar = "show_fps";
   fps.en = "Frame rate display";
   fps.de = "FPS-Anzeige";
+#if defined(__ANDROID__)
+  fps.help_en = "Shows the game's frame rate in the top left corner.";
+  fps.help_de = "Zeigt oben links die Bildrate des Spiels.";
+#else
   fps.help_en = "Shows the game's frame rate in the top left corner. F3 switches it in the game too.";
   fps.help_de = "Zeigt oben links die Bildrate des Spiels. F3 schaltet sie im Spiel auch um.";
+#endif
   page.settings.push_back(std::move(fps));
+#if !defined(__ANDROID__)
+  // Not on Android: the note is picked up by Core of Light, a Windows program.
   // Problem melden (problem_note.h): the picture of this moment, the kind of problem, a few words.
   Setting report;
   report.en = "Report a problem";
@@ -1706,13 +1739,19 @@ void AddQuitSettings(SettingsPage& page) {
       "\xE2\x80\x9EProblem melden\xE2\x80\x9C in Core of Light schickt es mit den Logs mit.";
   report.action = [] { OpenProblemNote(); };
   page.settings.push_back(std::move(report));
+#endif
   Setting quit;
   quit.en = "Quit the game";
   quit.de = "Spiel beenden";
+#if defined(__ANDROID__)
+  quit.help_en = "Closes the app. What the game saved stays saved.";
+  quit.help_de = "Schlie\xC3\x9F" "t die App. Was das Spiel gespeichert hat, bleibt gespeichert.";
+#else
   quit.help_en = "Closes the game, as its window's X does. What the game saved stays saved.";
   quit.help_de =
       "Schlie\xC3\x9F" "t das Spiel wie das X des Fensters. Was das Spiel gespeichert hat, bleibt "
       "gespeichert.";
+#endif
   quit.confirm_en = "Quit the game?";
   quit.confirm_de = "Spiel beenden?";
   quit.action = [] { CloseGameWindow(); };
