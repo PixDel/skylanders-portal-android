@@ -1,6 +1,10 @@
 #include "portal_rex/settings_menu.h"
 
 #include <algorithm>
+#if defined(__ANDROID__)
+#include <jni.h>
+#include <SDL3/SDL_system.h>
+#endif
 #include <cctype>
 #include <chrono>
 #include <cmath>
@@ -72,6 +76,9 @@ REXCVAR_DEFINE_BOOL(started_by_launcher, false, "Launcher",
 
 namespace skylanders {
 namespace {
+
+void RestartGame();      // below
+bool CanRestartGame();   // below
 
 using namespace menu_draw;
 using rex::input::DeviceId;
@@ -880,6 +887,14 @@ class SettingsMenuDialog final : public rex::ui::ImGuiDialog {
     }
     if (a.save) {
       Save();
+      // A saved change that only applies at the next start: offer the restart right away.
+      if (AnyPending() && CanRestartGame()) {
+        ask_ = true;
+        ask_choice_ = 0;
+        ask_en_ = "Restart now to apply?";
+        ask_de_ = "Jetzt neu starten, damit es wirkt?";
+        ask_action_ = [] { RestartGame(); };
+      }
       return;
     }
     if (a.back) {
@@ -976,6 +991,15 @@ class SettingsMenuDialog final : public rex::ui::ImGuiDialog {
 
   // Actions run with the menu closed, after this frame (one may open another overlay); unsaved
   // changes are asked about first.
+  static bool AnyPending() {
+    for (const SettingsPage& page : g_state.pages) {
+      for (const Setting& setting : page.settings) {
+        if (Pending(setting)) return true;
+      }
+    }
+    return false;
+  }
+
   void RunAction(const Setting& s) {
     // Changes rows: runs here, the menu stays, Y saves them.
     if (s.keep_open) {
@@ -1586,9 +1610,35 @@ void CloseGameWindow() {
 #endif
 }
 
+bool CanRestartGame() {
+#if defined(_WIN32) || defined(__ANDROID__)
+  return !REXCVAR_GET(started_by_launcher);
+#else
+  return false;
+#endif
+}
+
 // The same exe with the same command line (without an earlier restart's wait), told to wait for
-// this process; then this one closes.
+// this process; then this one closes. Android: the activity starts a helper process that opens the
+// game again once this process is gone (SSAActivity.restartGame).
 void RestartGame() {
+#if defined(__ANDROID__)
+  JNIEnv* env = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
+  jobject activity = static_cast<jobject>(SDL_GetAndroidActivity());
+  if (env && activity) {
+    jclass cls = env->GetObjectClass(activity);
+    jmethodID method = cls ? env->GetMethodID(cls, "restartGame", "()V") : nullptr;
+    if (method) {
+      REXLOG_INFO("Settings menu: restarting");
+      env->CallVoidMethod(activity, method);
+      if (env->ExceptionCheck()) env->ExceptionClear();
+      return;  // the activity ends this process
+    }
+    if (env->ExceptionCheck()) env->ExceptionClear();
+  }
+  REXLOG_WARN("Settings menu: could not restart the game");
+  return;
+#endif
 #if defined(_WIN32)
   wchar_t exe[MAX_PATH] = L"", dir[MAX_PATH] = L"";
   GetModuleFileNameW(nullptr, exe, MAX_PATH);
